@@ -1,4 +1,6 @@
 use std::{
+    collections::HashMap,
+    error::Error,
     fmt::{self, Display},
     ops::BitXor,
 };
@@ -20,12 +22,12 @@ impl ByteString {
     }
 
     pub fn from_u4_string(string: &[u8]) -> Self {
-        let bytes = string
+        string
             .iter()
             .tuples()
             .map(|(high, low)| (high << 4) + low)
-            .collect();
-        Self { bytes }
+            .collect::<Vec<_>>()
+            .into()
     }
 
     /// Coverts a string of u8 to one of u24
@@ -71,19 +73,66 @@ impl ByteString {
             .map(|hex| char::from_digit(hex as u32, 16).unwrap())
             .collect()
     }
+
+    pub fn bytewise_xor(&self, xor_byte: u8) -> Self {
+        self.bytes
+            .iter()
+            .map(|&byte| byte ^ xor_byte)
+            .collect::<Vec<_>>()
+            .into()
+    }
+
+    /// The smaller the more wordlike
+    pub fn wordlike_score(&self) -> f64 {
+        let json_freq = include_str!("./data/ascii_frec.json");
+        let eng_freq_map: HashMap<char, f64> = serde_json::from_str(json_freq).unwrap();
+
+        let mut counts: HashMap<char, usize> = HashMap::new();
+        for byte in self.bytes.iter() {
+            let char = byte.to_ascii_lowercase() as char;
+            *counts.entry(char).or_insert(0) += 1;
+        }
+
+        let counted: usize = counts
+            .iter()
+            .filter_map(|(char, count)| eng_freq_map.contains_key(char).then_some(count))
+            .sum();
+
+        // I use the total variation difference between the distributions, as it is so simple
+        // Really ugly adition to factor in spaces as there was one very similar without spaces... But basically cheating. Would want freq of spaces in dataset...
+        let score = eng_freq_map
+            .iter()
+            .map(|(char, eng_freq)| {
+                let obs_freq = *counts.get(char).unwrap_or(&0) as f64 / counted as f64;
+                (eng_freq - obs_freq).abs()
+            })
+            .sum::<f64>()
+            / counts
+                .iter()
+                .filter_map(|(char, count)| (char == &' ').then_some(*count as f64))
+                .sum::<f64>();
+        if score.is_nan() {
+            f64::INFINITY
+        } else {
+            score
+        }
+    }
+
+    pub fn to_utf8(&self) -> Result<String, Box<dyn Error>> {
+        Ok(String::from_utf8(self.bytes.clone())?)
+    }
 }
 
 impl BitXor for ByteString {
     type Output = Self;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        let bytes = self
-            .bytes
+        self.bytes
             .into_iter()
             .zip(rhs.bytes.into_iter())
             .map(|(lhs, rhs)| lhs ^ rhs)
-            .collect();
-        Self { bytes }
+            .collect::<Vec<_>>()
+            .into()
     }
 }
 
@@ -101,5 +150,11 @@ impl Display for ByteString {
 impl From<&str> for ByteString {
     fn from(string: &str) -> Self {
         Self::from_hexadecimal_str(string)
+    }
+}
+
+impl From<Vec<u8>> for ByteString {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self { bytes }
     }
 }

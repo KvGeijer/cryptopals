@@ -22,4 +22,22 @@ mod set_1 {
         let xor = left ^ right;
         assert_eq!(&xor.as_base4(), "746865206b696420646f6e277420706c6179")
     }
+
+    #[test]
+    // Challenge 3
+    fn single_byte_xor_cipher() {
+        let input: ByteString =
+            "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736".into();
+
+        // What char has it been xor'd against? Test all chars and choose the best result
+        let best = (0..=(u8::MAX))
+            .map(|xor_byte| input.bytewise_xor(xor_byte))
+            .min_by(|a, b| a.wordlike_score().partial_cmp(&b.wordlike_score()).unwrap())
+            .unwrap();
+
+        assert_eq!(
+            best.to_utf8().unwrap(),
+            "Cooking MC's like a pound of bacon",
+        );
+    }
 }
