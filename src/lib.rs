@@ -97,3 +97,9 @@ impl Display for ByteString {
         write!(f, "{string}")
     }
 }
+
+impl From<&str> for ByteString {
+    fn from(string: &str) -> Self {
+        Self::from_hexadecimal_str(string)
+    }
+}
