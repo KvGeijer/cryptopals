@@ -1,5 +1,11 @@
+use std::{
+    fmt::{self, Display},
+    ops::BitXor,
+};
+
 use itertools::Itertools;
 
+#[derive(Clone)]
 pub struct ByteString {
     pub bytes: Vec<u8>,
 }
@@ -47,7 +53,7 @@ impl ByteString {
             .collect()
     }
 
-    pub fn to_base64(&self) -> String {
+    pub fn as_base64(&self) -> String {
         let base64_chars: Vec<char> =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
                 .chars()
@@ -56,5 +62,38 @@ impl ByteString {
             .into_iter()
             .map(|ind| base64_chars[ind as usize])
             .collect()
+    }
+
+    pub fn as_base4(&self) -> String {
+        self.bytes
+            .iter()
+            .flat_map(|byte| [(byte >> 4) & 0b1111, byte & 0b1111])
+            .map(|hex| char::from_digit(hex as u32, 16).unwrap())
+            .collect()
+    }
+}
+
+impl BitXor for ByteString {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        let bytes = self
+            .bytes
+            .into_iter()
+            .zip(rhs.bytes.into_iter())
+            .map(|(lhs, rhs)| lhs ^ rhs)
+            .collect();
+        Self { bytes }
+    }
+}
+
+impl Display for ByteString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let string = self
+            .bytes
+            .iter()
+            .map(|byte| format!("{:08b}", byte))
+            .join("");
+        write!(f, "{string}")
     }
 }
