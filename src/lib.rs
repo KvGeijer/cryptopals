@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use std::{
     collections::HashMap,
     fmt::{self, Display},
@@ -81,39 +84,46 @@ impl ByteString {
             .into()
     }
 
+    pub fn repeating_xor(&self, key: &[u8]) -> Self {
+        self.bytes
+            .chunks(3)
+            .flat_map(|chunk| {
+                chunk
+                    .iter()
+                    .cloned()
+                    .zip(key.iter().cloned())
+                    .collect::<Vec<_>>()
+            })
+            .map(|(byte, xor_byte)| byte ^ xor_byte)
+            .collect::<Vec<_>>()
+            .into()
+    }
+
     /// The smaller the more wordlike
     pub fn wordlike_score(&self) -> f64 {
-        let json_freq = include_str!("./data/ascii_frec.json");
-        let eng_freq_map: HashMap<char, f64> = serde_json::from_str(json_freq).unwrap();
-
-        let mut counts: HashMap<char, usize> = HashMap::new();
-        for byte in self.bytes.iter() {
-            let char = byte.to_ascii_lowercase() as char;
-            *counts.entry(char).or_insert(0) += 1;
+        // The data taken from https://raw.githubusercontent.com/piersy/ascii-char-frequency-english/main/ascii_freq.json
+        // But has been reformatted to a nice dictionary
+        lazy_static! {
+            static ref ENG_FREQS: HashMap<u8, f64> = {
+                let json_freq = include_str!("./data/large_ascii_freq.json");
+                serde_json::from_str(json_freq).unwrap()
+            };
         }
 
-        let counted: usize = counts
-            .iter()
-            .filter_map(|(char, count)| eng_freq_map.contains_key(char).then_some(count))
-            .sum();
-
-        // Want as many chars as possible to be printable ascii
-        let printable = counts
-            .iter()
-            .filter_map(|(char, count)| {
-                (char.is_ascii_graphic() || char.is_ascii_whitespace()).then_some(*count as f64)
-            })
-            .sum::<f64>();
+        let mut counts: HashMap<u8, usize> = HashMap::new();
+        for byte in self.bytes.iter() {
+            *counts.entry(*byte).or_insert(0) += 1;
+        }
 
         // I use the total variation difference between the distributions, as it is so simple
-        let score = eng_freq_map
+        let score = ENG_FREQS
             .iter()
             .map(|(char, eng_freq)| {
-                let obs_freq = *counts.get(char).unwrap_or(&0) as f64 / counted as f64;
+                // bytes.len() should be close to correct
+                let obs_freq = *counts.get(char).unwrap_or(&0) as f64 / self.bytes.len() as f64;
                 (eng_freq - obs_freq).abs()
             })
-            .sum::<f64>()
-            / printable;
+            .sum::<f64>();
 
         if score.is_nan() {
             f64::INFINITY
@@ -160,5 +170,13 @@ impl From<&str> for ByteString {
 impl From<Vec<u8>> for ByteString {
     fn from(bytes: Vec<u8>) -> Self {
         Self { bytes }
+    }
+}
+
+impl From<&[u8]> for ByteString {
+    fn from(bytes: &[u8]) -> Self {
+        Self {
+            bytes: bytes.to_vec(),
+        }
     }
 }
