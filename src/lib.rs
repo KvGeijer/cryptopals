@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    error::Error,
     fmt::{self, Display},
     ops::BitXor,
 };
@@ -98,8 +97,15 @@ impl ByteString {
             .filter_map(|(char, count)| eng_freq_map.contains_key(char).then_some(count))
             .sum();
 
+        // Want as many chars as possible to be printable ascii
+        let printable = counts
+            .iter()
+            .filter_map(|(char, count)| {
+                (char.is_ascii_graphic() || char.is_ascii_whitespace()).then_some(*count as f64)
+            })
+            .sum::<f64>();
+
         // I use the total variation difference between the distributions, as it is so simple
-        // Really ugly adition to factor in spaces as there was one very similar without spaces... But basically cheating. Would want freq of spaces in dataset...
         let score = eng_freq_map
             .iter()
             .map(|(char, eng_freq)| {
@@ -107,10 +113,8 @@ impl ByteString {
                 (eng_freq - obs_freq).abs()
             })
             .sum::<f64>()
-            / counts
-                .iter()
-                .filter_map(|(char, count)| (char == &' ').then_some(*count as f64))
-                .sum::<f64>();
+            / printable;
+
         if score.is_nan() {
             f64::INFINITY
         } else {
@@ -118,8 +122,8 @@ impl ByteString {
         }
     }
 
-    pub fn to_utf8(&self) -> Result<String, Box<dyn Error>> {
-        Ok(String::from_utf8(self.bytes.clone())?)
+    pub fn to_utf8(&self) -> Option<String> {
+        String::from_utf8(self.bytes.clone()).ok()
     }
 }
 
