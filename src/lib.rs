@@ -135,6 +135,14 @@ impl ByteString {
     pub fn to_utf8(&self) -> Option<String> {
         String::from_utf8(self.bytes.clone()).ok()
     }
+
+    pub fn hamming_dist(&self, other: &Self) -> u64 {
+        self.bytes
+            .iter()
+            .zip(other.bytes.iter())
+            .map(|(b1, b2)| (b1 ^ b2).count_ones() as u64)
+            .sum()
+    }
 }
 
 impl BitXor for ByteString {
