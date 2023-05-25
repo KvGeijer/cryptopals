@@ -4,14 +4,23 @@ extern crate lazy_static;
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    ops::BitXor,
+    ops::{self, BitXor},
 };
 
 use itertools::Itertools;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ByteString {
-    pub bytes: Vec<u8>,
+    bytes: Vec<u8>,
+}
+
+lazy_static! {
+    static ref BASE64_CHARS: Vec<char> =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            .chars()
+            .collect();
+    static ref BASE64_CHAR_INDS: HashMap<char, usize> =
+        BASE64_CHARS.iter().cloned().zip(0..).collect();
 }
 
 impl ByteString {
@@ -30,6 +39,41 @@ impl ByteString {
             .map(|(high, low)| (high << 4) + low)
             .collect::<Vec<_>>()
             .into()
+    }
+
+    /// Only correctly handles = signs at the end of the string
+    pub fn from_base64(base64_str: &str) -> Option<Self> {
+        let mut u6_inds = base64_str
+            .chars()
+            .filter(|char| *char != '=')
+            .map(|char| BASE64_CHAR_INDS.get(&char).map(|ind| *ind as u8))
+            .collect::<Option<Vec<u8>>>()?;
+
+        println!("{:?}", u6_inds);
+
+        // Do we actually need this? Yes... Damn
+        let missing_u6 = u6_inds.len() % 4;
+        if missing_u6 != 0 && base64_str.chars().last()? == '=' {
+            for _padding in 0..missing_u6 {
+                u6_inds.push(0);
+            }
+        }
+
+        println!("{:?}", u6_inds);
+
+        Some(
+            u6_inds
+                .chunks(4) // 4 6 bit bytes => 24 bits = 3 bytes
+                .map(|chunk| {
+                    // to 24 bit u32
+                    chunk.iter().fold(0u32, |acc, u6| (acc << 6) + (*u6 as u32))
+                })
+                .flat_map(|u24| {
+                    (0..=2).map(move |shift| ((u24 >> (16 - shift * 8)) & 0b11111111) as u8)
+                })
+                .collect::<Vec<u8>>()
+                .into(),
+        )
     }
 
     /// Coverts a string of u8 to one of u24
@@ -58,13 +102,9 @@ impl ByteString {
     }
 
     pub fn as_base64(&self) -> String {
-        let base64_chars: Vec<char> =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-                .chars()
-                .collect();
         self.to_u6_string()
             .into_iter()
-            .map(|ind| base64_chars[ind as usize])
+            .map(|ind| BASE64_CHARS[ind as usize])
             .collect()
     }
 
@@ -104,23 +144,27 @@ impl ByteString {
         // The data taken from https://raw.githubusercontent.com/piersy/ascii-char-frequency-english/main/ascii_freq.json
         // But has been reformatted to a nice dictionary
         lazy_static! {
-            static ref ENG_FREQS: HashMap<u8, f64> = {
-                let json_freq = include_str!("./data/large_ascii_freq.json");
+            static ref ENG_FREQS: HashMap<char, f64> = {
+                let json_freq = include_str!("../character_statistics/frankenstein_freqs.json");
                 serde_json::from_str(json_freq).unwrap()
             };
         }
 
-        let mut counts: HashMap<u8, usize> = HashMap::new();
+        let mut counts: HashMap<char, usize> = HashMap::new();
         for byte in self.bytes.iter() {
-            *counts.entry(*byte).or_insert(0) += 1;
+            *counts.entry(*byte as char).or_insert(0) += 1;
         }
+        let common_counted: usize = ENG_FREQS
+            .iter()
+            .filter_map(|(char, _)| counts.get(char))
+            .sum();
 
         // I use the total variation difference between the distributions, as it is so simple
         let score = ENG_FREQS
             .iter()
             .map(|(char, eng_freq)| {
                 // bytes.len() should be close to correct
-                let obs_freq = *counts.get(char).unwrap_or(&0) as f64 / self.bytes.len() as f64;
+                let obs_freq = *counts.get(char).unwrap_or(&0) as f64 / common_counted as f64;
                 (eng_freq - obs_freq).abs()
             })
             .sum::<f64>();
@@ -139,9 +183,30 @@ impl ByteString {
     pub fn hamming_dist(&self, other: &Self) -> u64 {
         self.bytes
             .iter()
-            .zip(other.bytes.iter())
+            .zip(other.as_slice())
             .map(|(b1, b2)| (b1 ^ b2).count_ones() as u64)
             .sum()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl<'a> IntoIterator for &'a ByteString {
+    type Item = &'a u8;
+    type IntoIter = std::slice::Iter<'a, u8>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.bytes.iter()
+    }
+}
+
+impl ops::Index<ops::Range<usize>> for ByteString {
+    type Output = [u8];
+
+    fn index(&self, range: ops::Range<usize>) -> &[u8] {
+        &self.bytes[range]
     }
 }
 
