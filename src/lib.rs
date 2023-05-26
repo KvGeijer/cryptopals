@@ -9,6 +9,8 @@ use std::{
 
 use itertools::Itertools;
 
+pub mod algorithms;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ByteString {
     bytes: Vec<u8>,
@@ -41,7 +43,7 @@ impl ByteString {
             .into()
     }
 
-    /// Only correctly handles = signs at the end of the string
+    /// Does not correctly handle = padding at the end...
     pub fn from_base64(base64_str: &str) -> Option<Self> {
         let mut u6_inds = base64_str
             .chars()
@@ -49,31 +51,25 @@ impl ByteString {
             .map(|char| BASE64_CHAR_INDS.get(&char).map(|ind| *ind as u8))
             .collect::<Option<Vec<u8>>>()?;
 
-        println!("{:?}", u6_inds);
+        let padding_count = base64_str.chars().rev().take_while(|&c| c == '=').count();
+        u6_inds.resize(u6_inds.len() + padding_count, 0);
 
-        // Do we actually need this? Yes... Damn
-        let missing_u6 = u6_inds.len() % 4;
-        if missing_u6 != 0 && base64_str.chars().last()? == '=' {
-            for _padding in 0..missing_u6 {
-                u6_inds.push(0);
-            }
-        }
+        let mut decoded: ByteString = u6_inds
+            .chunks(4) // 4 6 bit bytes => 24 bits = 3 bytes
+            .map(|chunk| {
+                // to 24 bit u32
+                chunk.iter().fold(0u32, |acc, u6| (acc << 6) + (*u6 as u32))
+            })
+            .flat_map(|u24| {
+                (0..=2).map(move |shift| ((u24 >> (16 - shift * 8)) & 0b11111111) as u8)
+            })
+            .collect::<Vec<u8>>()
+            .into();
 
-        println!("{:?}", u6_inds);
+        // This is not correct.
+        decoded.bytes.truncate(decoded.bytes.len() - padding_count);
 
-        Some(
-            u6_inds
-                .chunks(4) // 4 6 bit bytes => 24 bits = 3 bytes
-                .map(|chunk| {
-                    // to 24 bit u32
-                    chunk.iter().fold(0u32, |acc, u6| (acc << 6) + (*u6 as u32))
-                })
-                .flat_map(|u24| {
-                    (0..=2).map(move |shift| ((u24 >> (16 - shift * 8)) & 0b11111111) as u8)
-                })
-                .collect::<Vec<u8>>()
-                .into(),
-        )
+        Some(decoded)
     }
 
     /// Coverts a string of u8 to one of u24
@@ -126,14 +122,8 @@ impl ByteString {
 
     pub fn repeating_xor(&self, key: &[u8]) -> Self {
         self.bytes
-            .chunks(3)
-            .flat_map(|chunk| {
-                chunk
-                    .iter()
-                    .cloned()
-                    .zip(key.iter().cloned())
-                    .collect::<Vec<_>>()
-            })
+            .iter()
+            .zip(key.iter().cycle())
             .map(|(byte, xor_byte)| byte ^ xor_byte)
             .collect::<Vec<_>>()
             .into()

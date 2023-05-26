@@ -1,12 +1,19 @@
+use base64::{engine::general_purpose, Engine as _};
+
 use cryptopals::ByteString;
 
+fn real_decrypt_base64(string: &str) -> ByteString {
+    general_purpose::STANDARD.decode(string).unwrap().into()
+}
+
 fn main() {
-    let input =
-        ByteString::from_base64("SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t")
-            .unwrap();
-    let output = input.as_base4();
-    assert_eq!(
-            output,
-            "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
-        );
+    let string = include_str!("../tests/data/challenge-1-6.txt")
+        .lines()
+        .collect::<String>();
+    let bytestring = real_decrypt_base64(&string);
+
+    let key = b"Terminator X: Bring the noise";
+    let decrypted = bytestring.repeating_xor(key);
+
+    println!("{}", decrypted.to_utf8().unwrap());
 }
