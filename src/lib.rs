@@ -181,6 +181,17 @@ impl ByteString {
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
     }
+
+    /// Pads the bytes to a multiple of the blocksize.
+    ///
+    /// The padding bytes has the value of the number of such bytes added, as in pkcs.
+    pub fn pad_pkcs7(mut self, blocksize: usize) -> Self {
+        let padding_size = (blocksize - (self.bytes.len() % blocksize)) % blocksize;
+        for _padding in 0..padding_size {
+            self.bytes.push(padding_size as u8);
+        }
+        self
+    }
 }
 
 impl<'a> IntoIterator for &'a ByteString {

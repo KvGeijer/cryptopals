@@ -151,6 +151,7 @@ mod set_1 {
     }
 
     #[test]
+    // Challenge 9
     fn detect_ecb() {
         let (line, _bytes) = include_str!("data/challenge-1-8.txt")
             .lines()
@@ -160,5 +161,19 @@ mod set_1 {
             .unwrap();
 
         assert_eq!(line, 132);
+    }
+}
+
+mod set_2 {
+    use super::*;
+
+    #[test]
+    fn pkcs_padding() {
+        let input: ByteString = b"YELLOW SUBMARINE".as_slice().into();
+
+        assert_eq!(
+            input.pad_pkcs7(20).to_utf8().unwrap(),
+            "YELLOW SUBMARINE\x04\x04\x04\x04"
+        );
     }
 }
