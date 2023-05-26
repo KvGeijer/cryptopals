@@ -4,7 +4,7 @@ extern crate lazy_static;
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    ops::{self, BitXor},
+    ops::{self, BitXor, Deref},
 };
 
 use itertools::Itertools;
@@ -241,5 +241,19 @@ impl From<&[u8]> for ByteString {
         Self {
             bytes: bytes.to_vec(),
         }
+    }
+}
+
+impl AsRef<[u8]> for ByteString {
+    fn as_ref(&self) -> &[u8] {
+        self.bytes.as_ref()
+    }
+}
+
+impl Deref for ByteString {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
     }
 }

@@ -1,6 +1,7 @@
 use crate::ByteString;
 
 use itertools::Itertools;
+use openssl::symm::{Cipher, Crypter, Mode};
 
 pub fn break_single_byte_xor_cipher(bytestring: &ByteString) -> Option<(ByteString, u8)> {
     let (_, decrypted, key) = (0..=(u8::MAX))
@@ -78,4 +79,19 @@ fn find_key_repeating_xor(bytestring: &ByteString, keysize: usize) -> Option<Byt
             .collect::<Option<Vec<u8>>>()?
             .into(),
     )
+}
+
+pub fn aes_decrypt(bytestring: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
+    let cipher = Cipher::aes_128_ecb();
+
+    // A Crypter does block-by-block processing.
+    let mut decrypter = Crypter::new(cipher, Mode::Decrypt, key, None)?;
+    decrypter.pad(false);
+
+    let mut decrypted = vec![0; bytestring.len() + cipher.block_size()];
+    let count = decrypter.update(bytestring, &mut decrypted)?;
+    let rest = decrypter.finalize(&mut decrypted[count..])?;
+    decrypted.truncate(count + rest);
+
+    Ok(decrypted.into())
 }
