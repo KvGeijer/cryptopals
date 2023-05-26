@@ -149,4 +149,16 @@ mod set_1 {
 
         assert_eq!(expected, decrypted.to_utf8().unwrap());
     }
+
+    #[test]
+    fn detect_ecb() {
+        let (line, _bytes) = include_str!("data/challenge-1-8.txt")
+            .lines()
+            .map(ByteString::from_hexadecimal_str)
+            .enumerate()
+            .max_by_key(|(_, bytes)| algorithms::ecb_score(bytes))
+            .unwrap();
+
+        assert_eq!(line, 132);
+    }
 }

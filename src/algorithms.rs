@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::ByteString;
 
 use itertools::Itertools;
@@ -94,4 +96,17 @@ pub fn aes_decrypt(bytestring: &[u8], key: &[u8]) -> std::io::Result<ByteString>
     decrypted.truncate(count + rest);
 
     Ok(decrypted.into())
+}
+
+/// How many 64 byte sequences are repeated?
+///
+/// ECB encryption don't use an initialization array, so every block (16 bytes)
+/// will always be encoded to the same 16 encoded bytes. So if we have sequences
+/// of 32 chars which are repeated (if ascii at least) we will notice duplicated
+/// blocks in the encoded string as well.
+///
+/// This is not the case in most modes (not ECB) as they use a mutable initialization
+/// vector which changes over time, removing this issue.
+pub fn ecb_score(bytes: &[u8]) -> usize {
+    bytes.chunks(16).count() - bytes.chunks(16).collect::<HashSet<_>>().len()
 }
