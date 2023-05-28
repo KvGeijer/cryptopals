@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::ByteString;
 
 use itertools::Itertools;
-use openssl::symm::{Cipher, Crypter, Mode};
+use openssl::symm::{decrypt, encrypt, Cipher};
 
 pub fn break_single_byte_xor_cipher(bytestring: &ByteString) -> Option<(ByteString, u8)> {
     let (_, decrypted, key) = (0..=(u8::MAX))
@@ -83,19 +83,48 @@ fn find_key_repeating_xor(bytestring: &ByteString, keysize: usize) -> Option<Byt
     )
 }
 
-pub fn aes_decrypt(bytestring: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
-    let cipher = Cipher::aes_128_ecb();
+/// Uses 128 bit ecb decryption
+pub fn aes_simple_decrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
+    Ok(decrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
+}
 
-    // A Crypter does block-by-block processing.
-    let mut decrypter = Crypter::new(cipher, Mode::Decrypt, key, None)?;
-    decrypter.pad(false);
+/// Uses 128 bit ecb encryption
+pub fn aes_simple_encrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
+    Ok(encrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
+}
 
-    let mut decrypted = vec![0; bytestring.len() + cipher.block_size()];
-    let count = decrypter.update(bytestring, &mut decrypted)?;
-    let rest = decrypter.finalize(&mut decrypted[count..])?;
-    decrypted.truncate(count + rest);
+pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<ByteString> {
+    let mut prev: ByteString = init.into();
+    let mut decrypted: ByteString = vec![].into();
+    for encrypted_block in bytes.chunks(16).map(ByteString::from) {
+        let mut padded_input = encrypted_block.clone();
 
-    Ok(decrypted.into())
+        // Seems the ssl decrypt expexts this to be padded, as it crashes otherwise
+        let encrypted_padding = aes_simple_encrypt(&[16; 16], key)?;
+        padded_input.extend(&encrypted_padding);
+
+        // Throw away the padding again... Why do we need this? I really don't understand
+        let decrypted_block: ByteString =
+            aes_simple_decrypt(&padded_input, key)?.as_slice()[..16].into();
+        let decrypted_xord = decrypted_block.repeating_xor(&prev);
+
+        decrypted.extend(&decrypted_xord);
+        prev = encrypted_block;
+    }
+    Ok(decrypted.remove_pkcs7_padding())
+}
+
+pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<ByteString> {
+    let mut prev: ByteString = init.into();
+    let mut encrypted = vec![];
+
+    for chunk in bytes.chunks(16).map(ByteString::from) {
+        let output: ByteString =
+            aes_simple_encrypt(&chunk.repeating_xor(&prev), key)?.as_slice()[..16].into();
+        encrypted.extend(&output);
+        prev = output;
+    }
+    Ok(encrypted.into())
 }
 
 /// How many 64 byte sequences are repeated?
@@ -109,4 +138,23 @@ pub fn aes_decrypt(bytestring: &[u8], key: &[u8]) -> std::io::Result<ByteString>
 /// vector which changes over time, removing this issue.
 pub fn ecb_score(bytes: &[u8]) -> usize {
     bytes.chunks(16).count() - bytes.chunks(16).collect::<HashSet<_>>().len()
+}
+
+#[test]
+fn test_aes_ecb() {
+    let key = b"YELLOW SUBMARINE";
+    let input = b"ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP";
+    let encrypted = aes_simple_encrypt(input, key).unwrap();
+    let decrypted = aes_simple_decrypt(&encrypted, key).unwrap();
+    assert_eq!(input.as_ref(), decrypted.as_slice());
+}
+
+#[test]
+fn test_aes_cbc() {
+    let iv = [0; 16];
+    let key = b"YELLOW SUBMARINE";
+    let input = b"ABCDEFGHIJKLMNOP";
+    let encrypted = aes_cbc_encrypt(input, key, &iv).unwrap();
+    let decrypted = aes_cbc_decrypt(&encrypted, key, &iv).unwrap();
+    assert_eq!(input.as_ref(), decrypted.as_slice());
 }

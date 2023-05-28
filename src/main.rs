@@ -7,7 +7,7 @@ fn real_decrypt_base64(string: &str) -> ByteString {
 }
 
 fn main() {
-    let string = include_str!("../tests/data/challenge-1-6.txt")
+    let string = include_str!("../tests/data/challenge-6.txt")
         .lines()
         .collect::<String>();
     let bytestring = real_decrypt_base64(&string);

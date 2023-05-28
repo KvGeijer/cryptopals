@@ -129,6 +129,12 @@ impl ByteString {
             .into()
     }
 
+    pub fn append(&mut self, other: &[u8]) {
+        for byte in other {
+            self.bytes.push(*byte);
+        }
+    }
+
     /// The smaller the more wordlike
     pub fn wordlike_score(&self) -> f64 {
         // The data taken from https://raw.githubusercontent.com/piersy/ascii-char-frequency-english/main/ascii_freq.json
@@ -185,12 +191,29 @@ impl ByteString {
     /// Pads the bytes to a multiple of the blocksize.
     ///
     /// The padding bytes has the value of the number of such bytes added, as in pkcs.
+    /// If alrealy multiple, adds a whole block of padding.
     pub fn pad_pkcs7(mut self, blocksize: usize) -> Self {
-        let padding_size = (blocksize - (self.bytes.len() % blocksize)) % blocksize;
-        for _padding in 0..padding_size {
-            self.bytes.push(padding_size as u8);
-        }
+        let padding_size = blocksize - (self.bytes.len() % blocksize);
+        self.bytes
+            .extend_from_slice(&[padding_size as u8; 32][..padding_size]);
         self
+    }
+
+    /// If there is pkcs at the end, removes those paddings
+    pub fn remove_pkcs7_padding(self) -> Self {
+        if let Some(&last) = self.bytes.last() {
+            if last < 32 {
+                self.bytes[..self.bytes.len() - last as usize].into()
+            } else {
+                self
+            }
+        } else {
+            self
+        }
+    }
+
+    pub fn extend(&mut self, bytes: &[u8]) {
+        self.bytes.extend_from_slice(bytes);
     }
 }
 
