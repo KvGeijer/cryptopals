@@ -38,7 +38,7 @@ fn find_keysizes_repeating_xor(bytes: &[u8], nbr_wanted: usize) -> Vec<usize> {
                     .chunks(keysize)
                     .take(chunks)
                     .permutations(2)
-                    .map(|combs| combs[0].hamming_dist(&combs[1]))
+                    .map(|combs| combs[0].hamming_dist(combs[1]))
                     .sum();
 
                 Some((score as f64 / keysize as f64, keysize))
@@ -61,31 +61,28 @@ fn find_keys_repeating_xor(bytes: &[u8], keysizes: &[usize]) -> Option<Vec<Vec<u
 
 fn find_key_repeating_xor(bytes: &[u8], keysize: usize) -> Option<Vec<u8>> {
     let blocks: Vec<&[u8]> = bytes.chunks(keysize).collect();
-    Some(
-        (0..keysize)
-            .map(|ind| {
-                // Solve transposed as single char xor cipher, to find that char of the key
-                let (_score, key) = break_single_byte_xor_cipher(
-                    &blocks
-                        .iter()
-                        .filter_map(|block| block.get(ind).cloned())
-                        .collect::<Vec<u8>>(),
-                )?;
-                Some(key)
-            })
-            .collect::<Option<Vec<u8>>>()?
-            .into(),
-    )
+    (0..keysize)
+        .map(|ind| {
+            // Solve transposed as single char xor cipher, to find that char of the key
+            let (_score, key) = break_single_byte_xor_cipher(
+                &blocks
+                    .iter()
+                    .filter_map(|block| block.get(ind).cloned())
+                    .collect::<Vec<u8>>(),
+            )?;
+            Some(key)
+        })
+        .collect::<Option<Vec<u8>>>()
 }
 
 /// Uses 128 bit ecb decryption
 pub fn aes_simple_decrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<Vec<u8>> {
-    Ok(decrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
+    Ok(decrypt(Cipher::aes_128_ecb(), key, None, bytes)?)
 }
 
 /// Uses 128 bit ecb encryption
 pub fn aes_simple_encrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<Vec<u8>> {
-    Ok(encrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
+    Ok(encrypt(Cipher::aes_128_ecb(), key, None, bytes)?)
 }
 
 pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<Vec<u8>> {
@@ -101,7 +98,7 @@ pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result
         // Throw away the padding again... Why do we need this? I really don't understand. Sort of get it, but annoying
         let mut decrypted_block = aes_simple_decrypt(&padded_input, key)?;
         decrypted_block.truncate(16);
-        let decrypted_xord = decrypted_block.repeating_xor(&prev);
+        let decrypted_xord = decrypted_block.repeating_xor(prev);
 
         decrypted.extend(&decrypted_xord);
         prev = encrypted_block;
@@ -119,7 +116,7 @@ pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result
         prev = output;
     }
 
-    Ok(encrypted.into())
+    Ok(encrypted)
 }
 
 /// How many 64 byte sequences are repeated?
