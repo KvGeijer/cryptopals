@@ -147,7 +147,7 @@ fn using_openssl_aes() {
 }
 
 #[test]
-// Challenge 9
+// Challenge 8
 fn detect_ecb() {
     let (line, _bytes) = include_str!("data/challenge-8.txt")
         .lines()
