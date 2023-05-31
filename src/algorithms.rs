@@ -28,13 +28,13 @@ pub fn break_repeating_bytes_xor_cipher(encrypted: &[u8]) -> Option<(Vec<u8>, Ve
         })
 }
 
-fn find_keysizes_repeating_xor(bytestring: &[u8], nbr_wanted: usize) -> Vec<usize> {
+fn find_keysizes_repeating_xor(bytes: &[u8], nbr_wanted: usize) -> Vec<usize> {
     (2..=40)
         .flat_map(|keysize| {
             // Could skip this map and only use as sorting, but is a bit inefficient as we would calculate scores too often
             let chunks = 4;
-            if bytestring.len() > chunks * keysize {
-                let score: u64 = bytestring
+            if bytes.len() > chunks * keysize {
+                let score: u64 = bytes
                     .chunks(keysize)
                     .take(chunks)
                     .permutations(2)
@@ -52,15 +52,15 @@ fn find_keysizes_repeating_xor(bytestring: &[u8], nbr_wanted: usize) -> Vec<usiz
         .collect()
 }
 
-fn find_keys_repeating_xor(bytestring: &[u8], keysizes: &[usize]) -> Option<Vec<Vec<u8>>> {
+fn find_keys_repeating_xor(bytes: &[u8], keysizes: &[usize]) -> Option<Vec<Vec<u8>>> {
     keysizes
         .iter()
-        .map(|&keysize| find_key_repeating_xor(bytestring, keysize))
+        .map(|&keysize| find_key_repeating_xor(bytes, keysize))
         .collect::<Option<Vec<_>>>()
 }
 
-fn find_key_repeating_xor(bytestring: &[u8], keysize: usize) -> Option<Vec<u8>> {
-    let blocks: Vec<&[u8]> = bytestring.chunks(keysize).collect();
+fn find_key_repeating_xor(bytes: &[u8], keysize: usize) -> Option<Vec<u8>> {
+    let blocks: Vec<&[u8]> = bytes.chunks(keysize).collect();
     Some(
         (0..keysize)
             .map(|ind| {

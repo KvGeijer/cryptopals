@@ -42,8 +42,8 @@ impl ByteString for [u8] {
                     .sum()
             })
             .flat_map(|u24: u32| {
-                [3, 2, 1, 0] // TODO rev and iter
-                    .into_iter()
+                (0..=3)
+                    .rev()
                     .map(move |shift| ((u24 >> (6 * shift)) & 0b111111) as u8)
             })
             .map(|u6| BASE64_CHARS[u6 as usize])
