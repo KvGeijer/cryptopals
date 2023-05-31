@@ -1,8 +1,11 @@
-use cryptopals::{algorithms, ByteString};
+use cryptopals::{
+    algorithms,
+    bytestring::{from_base64_str, ByteString},
+};
 
 #[test]
 fn pkcs_padding() {
-    let input: ByteString = b"YELLOW SUBMARINE".as_slice().into();
+    let input = b"YELLOW SUBMARINE";
 
     assert_eq!(
         input.pad_pkcs7(20).to_utf8().unwrap(),
@@ -24,7 +27,7 @@ fn ecb_fixed_point() {
 #[test]
 // Challenge 10
 fn cbc_decryption() {
-    let bytes = ByteString::from_base64(
+    let bytes = from_base64_str(
         &include_str!("data/challenge-10.txt")
             .lines()
             .collect::<String>(),

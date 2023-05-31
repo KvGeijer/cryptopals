@@ -1,9 +1,12 @@
-use cryptopals::{algorithms, ByteString};
+use cryptopals::{
+    algorithms,
+    bytestring::{from_base64_str, from_hex_str, ByteString},
+};
 
 #[test]
 // Challenge 1
 fn hex_to_base64() {
-    let input: ByteString = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d".into();
+    let input = from_hex_str("49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d").unwrap();
     let output = input.as_base64();
     assert_eq!(
         output,
@@ -14,17 +17,18 @@ fn hex_to_base64() {
 #[test]
 // Challenge 2
 fn fixed_xor() {
-    let left: ByteString = "1c0111001f010100061a024b53535009181c".into();
-    let right: ByteString = "686974207468652062756c6c277320657965".into();
-    let xor = left ^ right;
-    assert_eq!(&xor.as_base4(), "746865206b696420646f6e277420706c6179")
+    let left = from_hex_str("1c0111001f010100061a024b53535009181c").unwrap();
+    let right = from_hex_str("686974207468652062756c6c277320657965").unwrap();
+    let xor = left.repeating_xor(&right);
+    assert_eq!(&xor.as_base4_str(), "746865206b696420646f6e277420706c6179")
 }
 
 #[test]
 // Challenge 3
 fn single_byte_xor_cipher() {
-    let input: ByteString =
-        "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736".into();
+    let input =
+        from_hex_str("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
+            .unwrap();
 
     // What char has it been xor'd against? Test all chars and choose the best result
     let (best, _key) = algorithms::break_single_byte_xor_cipher(&input).unwrap();
@@ -39,17 +43,17 @@ fn single_byte_xor_cipher() {
 #[ignore]
 // Challenge 4
 fn detect_single_byte_xor() {
-    let bytestrings: Vec<ByteString> = include_str!("./data/challenge-4.txt")
+    let bytestrings: Vec<Vec<u8>> = include_str!("./data/challenge-4.txt")
         .lines()
-        .map(ByteString::from_hexadecimal_str)
-        .collect();
+        .map(from_hex_str)
+        .collect::<Option<_>>()
+        .unwrap();
 
     let (_improvement, decrypted) = bytestrings
         .iter()
         .map(|bytestring| {
             let original_score = bytestring.wordlike_score();
-            let (decrypted, _key) =
-                algorithms::break_single_byte_xor_cipher(bytestring).unwrap();
+            let (decrypted, _key) = algorithms::break_single_byte_xor_cipher(bytestring).unwrap();
             (original_score / decrypted.wordlike_score(), decrypted)
         })
         .max_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap())
@@ -64,36 +68,31 @@ fn detect_single_byte_xor() {
 #[test]
 // Challenge 5
 fn repeating_key_xor() {
-    let input: ByteString =
-        "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal"
-            .as_bytes()
-            .into();
+    let input = b"Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
     let key = "ICE".as_bytes();
 
     let decrypted = input.repeating_xor(key);
 
     assert_eq!(
-        decrypted.as_base4(),
+        decrypted.as_base4_str(),
         "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
     );
 }
 
 #[test]
 fn hamming_distance() {
-    let test: ByteString = "this is a test".as_bytes().into();
-    let wokka: ByteString = "wokka wokka!!!".as_bytes().into();
+    let test = b"this is a test";
+    let wokka = b"wokka wokka!!!";
 
-    assert_eq!(test.hamming_dist(&wokka), 37);
+    assert_eq!(test.hamming_dist(wokka), 37);
 }
 
 #[test]
 // Reverse test from challenge 1, needed for challenge 6
 fn from_base64() {
-    let input = ByteString::from_base64(
-        "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t",
-    )
-    .unwrap();
-    let output = input.as_base4();
+    let input = from_base64_str("SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t")
+        .unwrap();
+    let output = input.as_base4_str();
     assert_eq!(
         output,
         "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
@@ -104,11 +103,11 @@ fn from_base64() {
 #[ignore]
 // This is from earlier challenge, but as the key is so short it becomes hard to solve
 fn breaking_simple_repeating_key_xor() {
-    let input: ByteString = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f".into();
-    let (decrypted, _key) = algorithms::break_repeating_bytes_xor_cipher(&input).unwrap();
+    let input_str = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f";
+    let input_bytes = from_hex_str(input_str).unwrap();
+    let (decrypted, _key) = algorithms::break_repeating_bytes_xor_cipher(&input_bytes).unwrap();
 
-    let expected =
-        "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
+    let expected = "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
 
     assert_eq!(decrypted.to_utf8().unwrap(), expected);
 }
@@ -117,7 +116,7 @@ fn breaking_simple_repeating_key_xor() {
 // #[ignore]
 // Challenge 6
 fn breaking_repeating_key_xor() {
-    let bytestring = ByteString::from_base64(
+    let bytestring = from_base64_str(
         &include_str!("./data/challenge-6.txt")
             .lines()
             .collect::<String>(),
@@ -134,7 +133,7 @@ fn breaking_repeating_key_xor() {
 // Challenge 7
 fn using_openssl_aes() {
     let key = b"YELLOW SUBMARINE";
-    let encrypted = ByteString::from_base64(
+    let encrypted = from_base64_str(
         &include_str!("data/challenge-7.txt")
             .lines()
             .collect::<String>(),
@@ -152,7 +151,7 @@ fn using_openssl_aes() {
 fn detect_ecb() {
     let (line, _bytes) = include_str!("data/challenge-8.txt")
         .lines()
-        .map(ByteString::from_hexadecimal_str)
+        .map(|line| from_hex_str(line).unwrap())
         .enumerate()
         .max_by_key(|(_, bytes)| algorithms::ecb_score(bytes))
         .unwrap();

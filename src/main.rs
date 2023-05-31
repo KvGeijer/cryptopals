@@ -1,9 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
+use cryptopals::bytestring::ByteString;
 
-use cryptopals::ByteString;
-
-fn real_decrypt_base64(string: &str) -> ByteString {
-    general_purpose::STANDARD.decode(string).unwrap().into()
+fn real_decrypt_base64(string: &str) -> Vec<u8> {
+    general_purpose::STANDARD.decode(string).unwrap()
 }
 
 fn main() {

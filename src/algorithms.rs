@@ -1,24 +1,22 @@
 use std::collections::HashSet;
 
-use crate::ByteString;
+use crate::bytestring::ByteString;
 
 use itertools::Itertools;
 use openssl::symm::{decrypt, encrypt, Cipher};
 
-pub fn break_single_byte_xor_cipher(bytestring: &ByteString) -> Option<(ByteString, u8)> {
+pub fn break_single_byte_xor_cipher(bytes: &[u8]) -> Option<(Vec<u8>, u8)> {
     let (_, decrypted, key) = (0..=(u8::MAX))
-        .map(|xor_byte| (bytestring.bytewise_xor(xor_byte), xor_byte))
+        .map(|xor_byte| (bytes.repeating_xor(&[xor_byte]), xor_byte))
         .map(|(decrypted, xor_byte)| (decrypted.wordlike_score(), decrypted, xor_byte))
         .min_by(|(a, _, _), (b, _, _)| a.total_cmp(b))?;
     Some((decrypted, key))
 }
 
 /// Returns the decrypted input, and then the found key
-pub fn break_repeating_bytes_xor_cipher(
-    encrypted: &ByteString,
-) -> Option<(ByteString, ByteString)> {
+pub fn break_repeating_bytes_xor_cipher(encrypted: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
     let keysizes = find_keysizes_repeating_xor(encrypted, 4);
-    let keys: Vec<ByteString> = find_keys_repeating_xor(encrypted, &keysizes)?;
+    let keys: Vec<Vec<u8>> = find_keys_repeating_xor(encrypted, &keysizes)?;
     keys.into_iter()
         .map(|key| (encrypted.repeating_xor(key.as_slice()), key))
         .map(|(dec, key)| (dec, key))
@@ -30,16 +28,14 @@ pub fn break_repeating_bytes_xor_cipher(
         })
 }
 
-fn find_keysizes_repeating_xor(bytestring: &ByteString, nbr_wanted: usize) -> Vec<usize> {
+fn find_keysizes_repeating_xor(bytestring: &[u8], nbr_wanted: usize) -> Vec<usize> {
     (2..=40)
         .flat_map(|keysize| {
             // Could skip this map and only use as sorting, but is a bit inefficient as we would calculate scores too often
             let chunks = 4;
-            if bytestring.as_slice().len() > chunks * keysize {
+            if bytestring.len() > chunks * keysize {
                 let score: u64 = bytestring
-                    .as_slice()
                     .chunks(keysize)
-                    .map(ByteString::from)
                     .take(chunks)
                     .permutations(2)
                     .map(|combs| combs[0].hamming_dist(&combs[1]))
@@ -56,15 +52,15 @@ fn find_keysizes_repeating_xor(bytestring: &ByteString, nbr_wanted: usize) -> Ve
         .collect()
 }
 
-fn find_keys_repeating_xor(bytestring: &ByteString, keysizes: &[usize]) -> Option<Vec<ByteString>> {
+fn find_keys_repeating_xor(bytestring: &[u8], keysizes: &[usize]) -> Option<Vec<Vec<u8>>> {
     keysizes
         .iter()
         .map(|&keysize| find_key_repeating_xor(bytestring, keysize))
         .collect::<Option<Vec<_>>>()
 }
 
-fn find_key_repeating_xor(bytestring: &ByteString, keysize: usize) -> Option<ByteString> {
-    let blocks: Vec<&[u8]> = bytestring.as_slice().chunks(keysize).collect();
+fn find_key_repeating_xor(bytestring: &[u8], keysize: usize) -> Option<Vec<u8>> {
+    let blocks: Vec<&[u8]> = bytestring.chunks(keysize).collect();
     Some(
         (0..keysize)
             .map(|ind| {
@@ -73,8 +69,7 @@ fn find_key_repeating_xor(bytestring: &ByteString, keysize: usize) -> Option<Byt
                     &blocks
                         .iter()
                         .filter_map(|block| block.get(ind).cloned())
-                        .collect::<Vec<u8>>()
-                        .into(),
+                        .collect::<Vec<u8>>(),
                 )?;
                 Some(key)
             })
@@ -84,28 +79,28 @@ fn find_key_repeating_xor(bytestring: &ByteString, keysize: usize) -> Option<Byt
 }
 
 /// Uses 128 bit ecb decryption
-pub fn aes_simple_decrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
+pub fn aes_simple_decrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<Vec<u8>> {
     Ok(decrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
 }
 
 /// Uses 128 bit ecb encryption
-pub fn aes_simple_encrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<ByteString> {
+pub fn aes_simple_encrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<Vec<u8>> {
     Ok(encrypt(Cipher::aes_128_ecb(), key, None, bytes)?.into())
 }
 
-pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<ByteString> {
-    let mut prev: ByteString = init.into();
-    let mut decrypted: ByteString = vec![].into();
-    for encrypted_block in bytes.chunks(16).map(ByteString::from) {
-        let mut padded_input = encrypted_block.clone();
+pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut prev = init;
+    let mut decrypted = vec![];
+    for encrypted_block in bytes.chunks(16) {
+        let mut padded_input = encrypted_block.to_vec();
 
         // Seems the ssl decrypt expexts this to be padded, as it crashes otherwise
         let encrypted_padding = aes_simple_encrypt(&[16; 16], key)?;
         padded_input.extend(&encrypted_padding);
 
-        // Throw away the padding again... Why do we need this? I really don't understand
-        let decrypted_block: ByteString =
-            aes_simple_decrypt(&padded_input, key)?.as_slice()[..16].into();
+        // Throw away the padding again... Why do we need this? I really don't understand. Sort of get it, but annoying
+        let mut decrypted_block = aes_simple_decrypt(&padded_input, key)?;
+        decrypted_block.truncate(16);
         let decrypted_xord = decrypted_block.repeating_xor(&prev);
 
         decrypted.extend(&decrypted_xord);
@@ -114,16 +109,16 @@ pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result
     Ok(decrypted.remove_pkcs7_padding())
 }
 
-pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<ByteString> {
-    let mut prev: ByteString = init.into();
+pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut prev = init.to_vec();
     let mut encrypted = vec![];
-
-    for chunk in bytes.chunks(16).map(ByteString::from) {
-        let output: ByteString =
-            aes_simple_encrypt(&chunk.repeating_xor(&prev), key)?.as_slice()[..16].into();
+    for plain_block in bytes.chunks(16) {
+        let mut output = aes_simple_encrypt(&plain_block.repeating_xor(&prev), key)?;
+        output.truncate(16);
         encrypted.extend(&output);
         prev = output;
     }
+
     Ok(encrypted.into())
 }
 
