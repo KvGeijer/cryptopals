@@ -1,6 +1,7 @@
 use cryptopals::{
-    algorithms::aes::{self, debug_encryption_oracle, ecb_score},
+    algorithms::aes::{self, ecb_score},
     bytestring::{from_base64_str, ByteString},
+    oracles::aes::debug_encryption_oracle,
 };
 
 #[test]
