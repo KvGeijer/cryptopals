@@ -1,7 +1,7 @@
 use cryptopals::{
-    algorithms::aes::{self, ecb_score},
+    algorithms::aes::{self, break_ecb_appending_oracle, ecb_score},
     bytestring::{from_base64_str, ByteString},
-    oracles::aes::debug_encryption_oracle,
+    oracles::aes::{debug_encryption_oracle, SimpleEcbAppender},
 };
 
 #[test]
@@ -55,4 +55,25 @@ fn detect_encryption_oracle() {
         let (enc, ecb) = debug_encryption_oracle(&input);
         assert_eq!(ecb, ecb_score(&enc) > 1);
     }
+}
+
+#[test]
+// Challenge 12
+fn simple_byte_at_a_time() {
+    let secret = from_base64_str(
+        &include_str!("./data/challenge-12.txt")
+            .lines()
+            .collect::<String>(),
+    )
+    .unwrap();
+
+    let oracle = SimpleEcbAppender::new(&secret);
+
+    // TODO: Why do we have this strange padding at the end?? Should not be there...
+    let decrypted = break_ecb_appending_oracle(&oracle)
+        .unwrap()
+        .remove_pkcs7_padding();
+
+    assert_eq!(decrypted, secret);
+    assert_eq!(decrypted.to_utf8().unwrap(), "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n");
 }
