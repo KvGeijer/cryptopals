@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::bytestring::ByteString;
 
 use openssl::symm::{decrypt, encrypt, Cipher};
+use rand::Rng;
 
 /// Uses 128 bit ecb decryption
 pub fn aes_simple_decrypt(bytes: &[u8], key: &[u8]) -> std::io::Result<Vec<u8>> {
@@ -59,6 +60,32 @@ pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result
 /// vector which changes over time, removing this issue.
 pub fn ecb_score(bytes: &[u8]) -> usize {
     bytes.chunks(16).count() - bytes.chunks(16).collect::<HashSet<_>>().len()
+}
+
+pub fn encryption_oracle(bytes: &[u8]) -> Vec<u8> {
+    debug_encryption_oracle(bytes).0
+}
+
+pub fn debug_encryption_oracle(bytes: &[u8]) -> (Vec<u8>, bool) {
+    let mut rng = rand::thread_rng();
+
+    let mut input = random_bytes(rng.gen_range(5..=10));
+    input.extend_from_slice(bytes);
+    input.extend(random_bytes(rng.gen_range(5..=10)));
+
+    let key = random_bytes(16);
+
+    match rng.gen_bool(0.5) {
+        true => (aes_simple_encrypt(&input, &key).unwrap(), true),
+        false => (
+            aes_cbc_encrypt(&input, &key, &random_bytes(16)).unwrap(),
+            false,
+        ),
+    }
+}
+
+fn random_bytes(nbr: usize) -> Vec<u8> {
+    (0..nbr).map(|_| rand::random()).collect()
 }
 
 #[test]

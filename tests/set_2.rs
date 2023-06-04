@@ -1,5 +1,5 @@
 use cryptopals::{
-    algorithms::aes,
+    algorithms::aes::{self, debug_encryption_oracle, ecb_score},
     bytestring::{from_base64_str, ByteString},
 };
 
@@ -44,4 +44,14 @@ fn cbc_decryption() {
         .unwrap();
 
     assert_eq!(expected, decrypted);
+}
+
+#[test]
+// Challenge 11
+fn detect_encryption_oracle() {
+    let input = [b'A'; 64];
+    for _ in 1..10 {
+        let (enc, ecb) = debug_encryption_oracle(&input);
+        assert_eq!(ecb, ecb_score(&enc) > 1);
+    }
 }
