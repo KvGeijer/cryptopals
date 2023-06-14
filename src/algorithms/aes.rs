@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use crate::{bytestring::ByteString, oracles::aes::SimpleEcbAppender};
+use crate::{
+    bytestring::ByteString,
+    oracles::aes::{EmailAdmin, SimpleEcbAppender},
+};
 
 use itertools::Itertools;
 use openssl::symm::{decrypt, encrypt, Cipher};
@@ -67,7 +70,6 @@ pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>,
     const MAX_ZEROBLOCK: [u8; 2 * MAX_BLOCKSIZE] = [0; 2 * MAX_BLOCKSIZE];
     // Step 1: establish block size, by finding which block just adds an extra block
     let init_len = oracle.encrypt(b"").len();
-    println!("{init_len}");
     let blocksize = (1..=MAX_BLOCKSIZE)
         .find_map(|blocksize| {
             let new_len = &oracle.encrypt(&MAX_ZEROBLOCK[..blocksize]).len();
@@ -115,6 +117,33 @@ pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>,
         };
     }
     Ok(decrypted[blocksize..].to_vec())
+}
+
+pub fn forge_admin_ciphertext(oracle: &EmailAdmin) -> Vec<u8> {
+    // We will just assume it is ecb and blocksize 16
+    const BLOCKSIZE: usize = 16;
+
+    // f"email={email}&uid=10&role=user"
+
+    // Strategy: want to find a way to see what block admin would be parsed to
+    // Then swap out last block, only containing the role in a valid user profile
+
+    // Has to be of length 13 + 16k
+    let email = "daru@twipo.jp";
+    let mut ciphertext = oracle.encrypt_user(email).as_slice().to_vec();
+
+    assert_eq!(ciphertext.len(), BLOCKSIZE * 3);
+
+    // Make email=0123456789 be the first block, and admin be the second (with valid padding), and just grab the second block
+    let admin_input_block = "admin".as_bytes().pad_pkcs7(BLOCKSIZE).to_utf8().unwrap();
+    let admin_input = format!("0123456789{admin_input_block}");
+    let manipulated_ciphertext = oracle.encrypt_user(&admin_input).as_slice().to_vec();
+    let admin_block = &manipulated_ciphertext[BLOCKSIZE..2 * BLOCKSIZE];
+
+    ciphertext[2 * BLOCKSIZE..].copy_from_slice(admin_block);
+    assert_eq!(ciphertext.len(), BLOCKSIZE * 3);
+
+    ciphertext
 }
 
 #[test]

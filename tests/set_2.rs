@@ -1,7 +1,7 @@
 use cryptopals::{
-    algorithms::aes::{self, break_ecb_appending_oracle, ecb_score},
+    algorithms::aes::{self, break_ecb_appending_oracle, ecb_score, forge_admin_ciphertext},
     bytestring::{from_base64_str, ByteString},
-    oracles::aes::{debug_encryption_oracle, SimpleEcbAppender},
+    oracles::aes::{debug_encryption_oracle, EmailAdmin, SimpleEcbAppender},
 };
 
 #[test]
@@ -76,4 +76,16 @@ fn simple_byte_at_a_time() {
 
     assert_eq!(decrypted, secret);
     assert_eq!(decrypted.to_utf8().unwrap(), "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n");
+}
+
+#[test]
+// Challenge 13
+fn ecb_cp() {
+    // So the idea is that we can send in an email and get the ecb encrypted ciphertext for
+    // f"email={email}&uid=\d\d&role=user"
+    // We can also send in a ciphertext and get back a bool of if it can be decrypted to f"role=admin"
+    // So we want to exploit ecb to craft a ciphertext that would be a valid admin profile
+    let oracle = EmailAdmin::new();
+    let admin_cipher = forge_admin_ciphertext(&oracle);
+    assert!(oracle.is_admin(&admin_cipher));
 }
