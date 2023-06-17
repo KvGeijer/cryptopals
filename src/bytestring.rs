@@ -26,7 +26,7 @@ pub trait ByteString {
     fn pad_pkcs7(&self, blocksize: usize) -> Vec<u8>;
 
     /// If there is pkcs at the end, removes those paddings
-    fn remove_pkcs7_padding(&self) -> Vec<u8>;
+    fn remove_pkcs7_padding(&self) -> Option<Vec<u8>>;
 
     fn extend_slice(&self, bytes: &[u8]) -> Vec<u8>;
 }
@@ -123,15 +123,19 @@ impl ByteString for [u8] {
         vec
     }
 
-    fn remove_pkcs7_padding(&self) -> Vec<u8> {
+    fn remove_pkcs7_padding(&self) -> Option<Vec<u8>> {
+        println!("{:?}", self);
         if let Some(&last) = self.last() {
-            if last < 32 {
-                self[..self.len() - last as usize].into()
+            if last > 0 && last <= 32 {
+                self[self.len() - last as usize..]
+                    .iter()
+                    .all(|&item| item == last)
+                    .then_some(self[..self.len() - last as usize].to_vec())
             } else {
-                self.to_vec()
+                None
             }
         } else {
-            self.to_vec()
+            None
         }
     }
 

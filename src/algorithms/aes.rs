@@ -36,7 +36,8 @@ pub fn aes_cbc_decrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result
         decrypted.extend(&decrypted_xord);
         prev = encrypted_block;
     }
-    Ok(decrypted.remove_pkcs7_padding())
+
+    Ok(decrypted)
 }
 
 pub fn aes_cbc_encrypt(bytes: &[u8], key: &[u8], init: &[u8]) -> std::io::Result<Vec<u8>> {
