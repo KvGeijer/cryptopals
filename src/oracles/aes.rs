@@ -9,22 +9,25 @@ use crate::{
 };
 
 /// Has a secret key, and a secret string which it appends to all encryption calls
-pub struct SimpleEcbAppender {
+pub struct EcbSurrounder {
     key: Vec<u8>,
-    secret_string: Vec<u8>,
+    prepending: Vec<u8>,
+    appending: Vec<u8>,
 }
 
-impl SimpleEcbAppender {
-    pub fn encrypt(&self, prepend: &[u8]) -> Vec<u8> {
-        let mut input = prepend.to_vec();
-        input.extend_from_slice(&self.secret_string);
+impl EcbSurrounder {
+    pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
+        let mut input = self.prepending.clone();
+        input.extend_from_slice(plaintext);
+        input.extend_from_slice(&self.appending);
         aes_simple_encrypt(&input, &self.key).unwrap()
     }
 
-    pub fn new(bytes: &[u8]) -> Self {
+    pub fn new(prep_size: usize, appending: &[u8]) -> Self {
         Self {
             key: random_bytes(16),
-            secret_string: bytes.to_vec(),
+            prepending: random_bytes(prep_size),
+            appending: appending.to_vec(),
         }
     }
 }

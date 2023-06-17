@@ -1,7 +1,7 @@
 use cryptopals::{
-    algorithms::aes::{self, break_ecb_appending_oracle, ecb_score, forge_admin_ciphertext},
+    algorithms::aes::{self, break_ecb_surrounding_oracle, ecb_score, forge_admin_ciphertext},
     bytestring::{from_base64_str, ByteString},
-    oracles::aes::{debug_encryption_oracle, EmailAdmin, SimpleEcbAppender},
+    oracles::aes::{debug_encryption_oracle, EcbSurrounder, EmailAdmin},
 };
 
 #[test]
@@ -67,10 +67,9 @@ fn simple_byte_at_a_time() {
     )
     .unwrap();
 
-    let oracle = SimpleEcbAppender::new(&secret);
+    let oracle = EcbSurrounder::new(0, &secret);
 
-    // TODO: Why do we have this strange padding at the end?? Should not be there...
-    let decrypted = break_ecb_appending_oracle(&oracle)
+    let decrypted = break_ecb_surrounding_oracle(&oracle)
         .unwrap()
         .remove_pkcs7_padding();
 
@@ -88,4 +87,27 @@ fn ecb_cp() {
     let oracle = EmailAdmin::new();
     let admin_cipher = forge_admin_ciphertext(&oracle);
     assert!(oracle.is_admin(&admin_cipher));
+}
+
+#[test]
+// Challenge 14
+fn harder_byte_at_a_time() {
+    let secret = from_base64_str(
+        &include_str!("./data/challenge-12.txt")
+            .lines()
+            .collect::<String>(),
+    )
+    .unwrap();
+
+    // Test a few number around edges of blocks
+    for prep_size in [1, 15, 17, 51, 63, 64, 65] {
+        let oracle = EcbSurrounder::new(prep_size, &secret);
+
+        let decrypted = break_ecb_surrounding_oracle(&oracle)
+            .unwrap()
+            .remove_pkcs7_padding();
+
+        assert_eq!(decrypted, secret);
+        assert_eq!(decrypted.to_utf8().unwrap(), "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n");
+    }
 }

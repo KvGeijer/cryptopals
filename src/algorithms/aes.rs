@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     bytestring::ByteString,
-    oracles::aes::{EmailAdmin, SimpleEcbAppender},
+    oracles::aes::{EcbSurrounder, EmailAdmin},
 };
 
 use itertools::Itertools;
@@ -65,9 +65,9 @@ pub fn ecb_score(bytes: &[u8]) -> usize {
     bytes.chunks(16).count() - bytes.chunks(16).collect::<HashSet<_>>().len()
 }
 
-pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>, String> {
+pub fn break_ecb_surrounding_oracle(oracle: &EcbSurrounder) -> Result<Vec<u8>, String> {
     const MAX_BLOCKSIZE: usize = 32;
-    const MAX_ZEROBLOCK: [u8; 2 * MAX_BLOCKSIZE] = [0; 2 * MAX_BLOCKSIZE];
+    const MAX_ZEROBLOCK: [u8; 3 * MAX_BLOCKSIZE] = [0; 3 * MAX_BLOCKSIZE];
     // Step 1: establish block size, by finding which block just adds an extra block
     let init_len = oracle.encrypt(b"").len();
     let blocksize = (1..=MAX_BLOCKSIZE)
@@ -79,9 +79,9 @@ pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>,
         .ok_or_else(|| "Could not find a blocksize".to_string())?;
     assert_eq!(blocksize, 16);
 
-    // Step 2: Assert that it is ECB mode
-    let init_score = ecb_score(&oracle.encrypt(&MAX_ZEROBLOCK[0..blocksize]));
-    let padded_score = ecb_score(&oracle.encrypt(&MAX_ZEROBLOCK[0..2 * blocksize]));
+    // Step 2: Assert that it is ECB mode. Make sure you get one extra repeating block
+    let init_score = ecb_score(&oracle.encrypt(&MAX_ZEROBLOCK[1..blocksize]));
+    let padded_score = ecb_score(&oracle.encrypt(&MAX_ZEROBLOCK[1..3 * blocksize]));
     if init_score + 1 != padded_score {
         return Err(format!(
             "The oracle is not using ecb. Got scores {} and {}, with blocksize {}",
@@ -89,7 +89,42 @@ pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>,
         ));
     }
 
-    // Breaking: Now we do a one byte lookup at a time to find the secret
+    // Step 3: Find the size of the prepended padding
+    // See in which blocks the prepadding is, by seeing the first one we can modify
+    const MAX_ONEBLOCK: [u8; 3 * MAX_BLOCKSIZE] = [1; 3 * MAX_BLOCKSIZE];
+    let zero_enc = oracle.encrypt(&MAX_ZEROBLOCK[..blocksize]);
+    let one_enc = oracle.encrypt(&MAX_ONEBLOCK[..blocksize]);
+    let padding_blocks = zero_enc
+        .chunks(blocksize)
+        .zip(one_enc.chunks(blocksize))
+        .take_while(|(zero, one)| zero == one)
+        .count();
+
+    // Then see how far into the next block the prepending string stretches
+    let padding_fill = blocksize
+        - (1..=MAX_BLOCKSIZE)
+            .find_map(|fillsize| {
+                // The two blocks after the prepend + fillsize padding. Should be identical if correct fillsize
+                let zero_corr_blocks = oracle.encrypt(&MAX_ZEROBLOCK[..2 * blocksize + fillsize])
+                    [(padding_blocks + 1) * blocksize..(padding_blocks + 3) * blocksize]
+                    .to_vec();
+                // Test for 0 and 1 to make sure it was not a fluke and to do with appending matching 0s
+                let one_corr_blocks = oracle.encrypt(&MAX_ONEBLOCK[..2 * blocksize + fillsize])
+                    [(padding_blocks + 1) * blocksize..(padding_blocks + 3) * blocksize]
+                    .to_vec();
+
+                // Adding some filling and two whole blocks should give an ecb score of one for the
+                // two blocks following the prepend and filled padding [prep1, ... [prep_last + fillsize], [corr1], [corr2]]
+                (ecb_score(&zero_corr_blocks) == 1 && ecb_score(&one_corr_blocks) == 1)
+                    .then_some(fillsize)
+            })
+            .expect("Could not find a fillsize");
+
+    // The padding to add to the plaintext to get a clean cut at a multiple of padd
+    let padding_vec = MAX_ZEROBLOCK[..blocksize - padding_fill].to_vec();
+    let prepad_len = blocksize * (padding_blocks + 1); // Pad out the last block to a clean one
+
+    // Step 4 Breaking: Now we do a one byte lookup at a time to find the secret
     let mut decrypted = vec![0; blocksize];
     for (block, padding) in (0..).cartesian_product((0..blocksize).rev()) {
         // The blocksize -1 bytes in front of the next inspected byte
@@ -97,17 +132,20 @@ pub fn break_ecb_appending_oracle(oracle: &SimpleEcbAppender) -> Result<Vec<u8>,
         assert_eq!(known.len(), blocksize - 1);
 
         // The block we would have got where the expected byte is the last one, and we know the rest
-        let expected_block = oracle.encrypt(&MAX_ZEROBLOCK[..padding])
-            [(block * blocksize)..((block + 1) * blocksize)]
+        let mut input = padding_vec.clone();
+        input.extend_from_slice(&MAX_ZEROBLOCK[..padding]);
+        let expected_block = oracle.encrypt(&input)
+            [prepad_len + (block * blocksize)..prepad_len + ((block + 1) * blocksize)]
             .to_vec();
 
         // Now find the byte which produces the same block when added to the last known bytes
-        let mut input = known.to_vec();
+        let mut input = padding_vec.clone();
+        input.extend_from_slice(&known);
         input.push(0);
         if let Some(decrypted_byte) = (0..=u8::MAX).find(|&byte| {
             let last_ind = input.len() - 1;
             input[last_ind] = byte;
-            let faked_block = oracle.encrypt(&input)[..blocksize].to_vec();
+            let faked_block = oracle.encrypt(&input)[prepad_len..prepad_len + blocksize].to_vec();
             assert_eq!(faked_block.len(), expected_block.len());
             faked_block == expected_block
         }) {
