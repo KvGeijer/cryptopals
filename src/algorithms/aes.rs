@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     bytestring::ByteString,
-    oracles::aes::{EcbSurrounder, EmailAdmin},
+    oracles::aes::{CbcSurrounder, EcbSurrounder, EmailAdmin},
 };
 
 use itertools::Itertools;
@@ -182,6 +182,40 @@ pub fn forge_admin_ciphertext(oracle: &EmailAdmin) -> Vec<u8> {
     ciphertext[2 * BLOCKSIZE..].copy_from_slice(admin_block);
     assert_eq!(ciphertext.len(), BLOCKSIZE * 3);
 
+    ciphertext
+}
+
+/// Returns a ciphertext with has "admin=true" when decrypted under the oracle
+///
+/// We are given the length of the prepending string, to align our message with the blocks.
+pub fn bitflip_cbc_admin(oracle: &CbcSurrounder, prep_len: usize) -> Vec<u8> {
+    // Strategy: create input of padding + 2 blocks, one of which can be scrambled, and the following
+    // Should be easy to flip some bits to get an ";admin=true" entry.
+    const BLOCKSIZE: usize = 16;
+
+    let padding: String = "a"
+        .chars()
+        .cycle()
+        .take(BLOCKSIZE - prep_len.rem_euclid(BLOCKSIZE))
+        .collect();
+
+    let scramble: String = "a".chars().cycle().take(BLOCKSIZE).collect();
+
+    assert_eq!(BLOCKSIZE, 16);
+    // ';' = 59 = 63 ^ 4 = '?' & 4
+    // '=' = 61 = 61 ^ 2 = '?' & 2
+    let flipping = "troll?admin?true";
+
+    let mut plaintext: String = padding.clone();
+    plaintext.push_str(&scramble);
+    plaintext.push_str(flipping);
+
+    let mut ciphertext = oracle.encrypt_user(&plaintext);
+
+    // Now bitflip the encrypted scramble block
+    let pad_len = prep_len + scramble.len();
+    ciphertext[pad_len + 5] ^= 4;
+    ciphertext[pad_len + 11] ^= 2;
     ciphertext
 }
 

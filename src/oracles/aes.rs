@@ -4,7 +4,7 @@ use itertools::Itertools;
 use rand::Rng;
 
 use crate::{
-    algorithms::aes::{aes_cbc_encrypt, aes_simple_decrypt, aes_simple_encrypt},
+    algorithms::aes::{aes_cbc_decrypt, aes_cbc_encrypt, aes_simple_decrypt, aes_simple_encrypt},
     bytestring::ByteString,
 };
 
@@ -100,5 +100,59 @@ impl EmailAdmin {
     pub fn encrypt_user(&self, plaintext: &str) -> Vec<u8> {
         let profile = profile_for(plaintext);
         aes_simple_encrypt(&profile.as_bytes(), &self.key).unwrap()
+    }
+}
+
+pub struct CbcSurrounder {
+    key: Vec<u8>,
+    init: Vec<u8>,
+    prepending: Vec<u8>,
+    appending: Vec<u8>,
+}
+
+impl CbcSurrounder {
+    pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
+        let mut input = self.prepending.clone();
+        input.extend_from_slice(plaintext);
+        input.extend_from_slice(&self.appending);
+        aes_simple_encrypt(&input, &self.key).unwrap()
+    }
+
+    pub fn new(prepending: &str, appending: &str) -> Self {
+        Self {
+            key: random_bytes(16),
+            init: random_bytes(16),
+            prepending: prepending.as_bytes().to_vec(),
+            appending: appending.as_bytes().to_vec(),
+        }
+    }
+
+    /// Simplified to accept string where parts are not utf8
+    pub fn is_admin(&self, ciphertext: &[u8]) -> bool {
+        if let Ok(plaintext) = aes_cbc_decrypt(ciphertext, &self.key, &self.init) {
+            println!("plaintext {:?}", plaintext);
+            // Makes a lossy conversion, ignoring non-ascii chars, which is a bit of a stretch...
+            let string = plaintext
+                .into_iter()
+                .flat_map(|byte| byte.is_ascii().then_some(byte as char))
+                .collect::<String>();
+            println!("string {:?}", string);
+            return string.split(";").any(|split| split == "admin=true");
+        }
+        false
+    }
+
+    pub fn encrypt_user(&self, plaintext: &str) -> Vec<u8> {
+        let mut input = self.prepending.clone();
+        input.extend_from_slice(
+            plaintext
+                .replace("=", "::eq::")
+                .replace(";", "::semicol::")
+                .as_bytes(),
+        );
+        input.extend_from_slice(&self.appending);
+        input = input.pad_pkcs7(16);
+
+        aes_cbc_encrypt(&input, &self.key, &self.init).unwrap()
     }
 }

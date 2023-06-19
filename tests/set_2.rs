@@ -1,7 +1,10 @@
 use cryptopals::{
-    algorithms::aes::{self, break_ecb_surrounding_oracle, ecb_score, forge_admin_ciphertext},
+    algorithms::aes::{
+        self, aes_cbc_decrypt, aes_cbc_encrypt, bitflip_cbc_admin, break_ecb_surrounding_oracle,
+        ecb_score, forge_admin_ciphertext,
+    },
     bytestring::{from_base64_str, ByteString},
-    oracles::aes::{debug_encryption_oracle, EcbSurrounder, EmailAdmin},
+    oracles::aes::{debug_encryption_oracle, CbcSurrounder, EcbSurrounder, EmailAdmin},
 };
 
 #[test]
@@ -129,4 +132,34 @@ fn pkcs7_validation() {
     assert!(b"ICE ICE BABY\x05\x05\x05\x05"
         .remove_pkcs7_padding()
         .is_none());
+}
+
+#[test]
+fn simple_cbc_bitflipping() {
+    // Just to see if I understand how to solve challenge 16
+    let plaintext = "fillerfillerfil\nSome real messa\nffffffffffff\x04\x04\x04\x04";
+
+    // It will only bitflip the corresponding bits in the immediately proceeding block. Not all of the following ones, which is nice.
+    let expexted = "Qome real messa\nffffffffffff\x04\x04\x04\x04";
+
+    let key = b"1234098745671209";
+    let init = [0; 16];
+
+    let mut ciphertext = aes_cbc_encrypt(plaintext.as_bytes(), key, &init).unwrap();
+
+    ciphertext[0] = ciphertext[0] ^ 2;
+
+    let decrypted = aes_cbc_decrypt(&ciphertext, key, &init).unwrap();
+    assert_eq!(decrypted[16..].to_utf8().unwrap(), expexted);
+}
+
+#[test]
+// Challenge 16
+fn cbc_bitflipping() {
+    let prep = "comment1=cooking%20MCs;userdata=";
+    let oracle = CbcSurrounder::new(prep, ";comment2=%20like%20a%20pound%20of%20bacon");
+
+    let admin_ciphertext = bitflip_cbc_admin(&oracle, prep.len());
+
+    assert!(oracle.is_admin(&admin_ciphertext));
 }

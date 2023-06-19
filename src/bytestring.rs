@@ -101,11 +101,6 @@ impl ByteString for [u8] {
     }
 
     fn to_utf8(&self) -> Option<String> {
-        println!(
-            "len: {} to utf8 {:?}",
-            self.len(),
-            String::from_utf8(self.to_vec())
-        );
         String::from_utf8(self.to_vec()).ok()
     }
 
