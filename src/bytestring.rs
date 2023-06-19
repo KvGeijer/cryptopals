@@ -119,7 +119,6 @@ impl ByteString for [u8] {
     }
 
     fn remove_pkcs7_padding(&self) -> Option<Vec<u8>> {
-        println!("{:?}", self);
         if let Some(&last) = self.last() {
             if last > 0 && last <= 32 {
                 self[self.len() - last as usize..]

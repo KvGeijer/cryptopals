@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     bytestring::ByteString,
-    oracles::aes::{CbcSurrounder, EcbSurrounder, EmailAdmin},
+    oracles::aes::{CbcPaddingOracle, CbcSurrounder, EcbSurrounder, EmailAdmin},
 };
 
 use itertools::Itertools;
@@ -217,6 +217,77 @@ pub fn bitflip_cbc_admin(oracle: &CbcSurrounder, prep_len: usize) -> Vec<u8> {
     ciphertext[pad_len + 5] ^= 4;
     ciphertext[pad_len + 11] ^= 2;
     ciphertext
+}
+
+pub fn padding_validation_sidechannel(
+    ciphertext: &[u8],
+    iv: &[u8],
+    oracle: &CbcPaddingOracle,
+) -> Vec<u8> {
+    // We want to solve one byte at a time from the back. (assumes len mult of 16)
+    // This is done by doing a single bit flip in the proceeding block, and checking if padding valid.
+    // That way we should find every byte after 256 possible bitflips.
+    // As we are given the iv used we can decrypt the whole string, otherwise not first block.
+    // We do this one block at a time
+
+    let mut ext_ciphertext = iv.to_vec();
+    ext_ciphertext.extend_from_slice(&ciphertext);
+
+    let mut decrypted = vec![];
+    for block_ind in (1..ext_ciphertext.len() / 16).rev() {
+        let decrypted_block =
+            solve_last_padding_block(&ext_ciphertext[..(block_ind + 1) * 16], oracle, &vec![])
+                .expect("Should find solution when no restrictions");
+        decrypted.push(decrypted_block);
+    }
+
+    decrypted.into_iter().rev().concat()
+}
+
+/// Decrypts the last block by exploiting the padding check
+fn solve_last_padding_block(
+    ciphertext: &[u8],
+    oracle: &CbcPaddingOracle,
+    known: &[u8],
+) -> Option<Vec<u8>> {
+    // Base case, have alrealy decrypted the whole block
+    if known.len() == 16 {
+        return Some(known.to_vec());
+    }
+
+    // First. Clone the ciphertext, and xor so the known ones correspond to next wanted padding
+    // So ????????3128 -> ???????X5555
+    // Making us ready to iterate over possible X, til we find one that fits.
+    let mut mod_ciphertext = ciphertext.to_vec();
+    for (from_last, known_byte) in known.iter().rev().enumerate() {
+        // Modify one block before
+        let ind = mod_ciphertext.len() - 17 - from_last;
+        // reset the byte to 0
+        mod_ciphertext[ind] ^= known_byte;
+        // make it to the wanted padding
+        mod_ciphertext[ind] ^= known.len() as u8 + 1;
+    }
+
+    // Then, iterate over all possible bytes, seeing which one produces ok padding
+    let xor_ind = mod_ciphertext.len() - 17 - known.len();
+    for byte in 0..=u8::MAX {
+        let xor = byte ^ (known.len() as u8 + 1);
+        mod_ciphertext[xor_ind] ^= xor;
+        let padding_ok = oracle.check_padding(&mod_ciphertext);
+        mod_ciphertext[xor_ind] ^= xor;
+
+        if padding_ok {
+            // Found a valid one, recurse!
+            // We don't really need to do this recursively (can only find fake ones on the first byte)
+            // But it becomes so simple, so we stick to it unless the performance is too bad.
+            let mut new_known = known.to_vec();
+            new_known.insert(0, byte);
+            if let Some(decrypted) = solve_last_padding_block(ciphertext, oracle, &new_known) {
+                return Some(decrypted);
+            }
+        }
+    }
+    None
 }
 
 #[test]

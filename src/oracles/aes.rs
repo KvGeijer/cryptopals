@@ -156,3 +156,34 @@ impl CbcSurrounder {
         aes_cbc_encrypt(&input, &self.key, &self.init).unwrap()
     }
 }
+
+pub struct CbcPaddingOracle {
+    key: Vec<u8>,
+    init: Vec<u8>,
+}
+
+impl CbcPaddingOracle {
+    pub fn new() -> Self {
+        Self {
+            key: random_bytes(16),
+            init: random_bytes(16),
+        }
+    }
+
+    /// Encrypts the text under the oracle, adding padding.
+    /// Returns the ciphertext as well as the initial vector used.
+    pub fn encrypt(&self, plaintext: &[u8]) -> (Vec<u8>, &[u8]) {
+        let ciphertext = aes_cbc_encrypt(&plaintext.pad_pkcs7(16), &self.key, &self.init)
+            .expect("Should not crash with correct padding");
+        (ciphertext, &self.init)
+    }
+
+    /// Decryps and returns whether the padding is valid or not
+    pub fn check_padding(&self, ciphertext: &[u8]) -> bool {
+        // This should only return err if padding invalid right?
+        aes_cbc_decrypt(ciphertext, &self.key, &self.init)
+            .unwrap()
+            .remove_pkcs7_padding()
+            .is_some()
+    }
+}
